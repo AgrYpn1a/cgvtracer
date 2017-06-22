@@ -13,10 +13,12 @@ namespace vtracer
 #define LUA_END_X "end_x"
 #define LUA_END_Y "end_y"
 	// lua functions
-	static int LUA_set_pixel(const Uint8, const Uint8);
+	static int LUA_set_pixel(lua_State* L);
+	static int LUA_set_pixel_size(lua_State* L);
 
 	static void on_mouse_down();
 	static void on_mouse_up();
+	static void on_mouse_drag();
 	static void stack_dump();
 	static void LUA_draw();
 
@@ -34,6 +36,9 @@ namespace vtracer
 			case SDL_MOUSEBUTTONUP:
 				on_mouse_up();
 				break;
+			case SDL_MOUSEMOTION:
+				on_mouse_drag();
+				break;
 			}
 			return true;
 		}
@@ -47,6 +52,9 @@ namespace vtracer
 	static const vtracer::VTracer* vtracer_instance = nullptr;
 	lua_State* L = nullptr;
 	
+	// helper vars
+	static bool dragging = false;
+
 	static void on_mouse_down()
 	{
 		lua_getfield(L, LUA_REGISTRYINDEX, "test");
@@ -61,11 +69,21 @@ namespace vtracer
 
 		lua_pop(L, 1);
 
-		std::cout << "Mouse pressed!" << std::endl;
+		// init dragging
+		::vtracer::dragging = true;
 	}
 
 	static void on_mouse_up()
 	{
+		// cancels dragging
+		::vtracer::dragging = false;
+	}
+
+	static void on_mouse_drag()
+	{
+		if (!dragging)
+			return;
+
 		lua_getfield(L, LUA_REGISTRYINDEX, "test");
 
 		int x, y;
@@ -79,9 +97,8 @@ namespace vtracer
 		lua_pop(L, 1);
 
 		LUA_draw();
-
-		std::cout << "Mouse released!" << std::endl;
 	}
+
 
 	static void LUA_draw()
 	{
@@ -92,6 +109,7 @@ namespace vtracer
 		lua_pop(L, 1);
 
 		::vtracer::vtracer_instance->render();
+		::vtracer::vtracer_instance->clear_screen();
 	}
 
 	// lua definitions
@@ -108,8 +126,15 @@ namespace vtracer
 		return 0;
 	}
 
+	static int LUA_set_pixel_size(lua_State* L)
+	{
+		::vtracer::vtracer_instance->set_pixel_size(luaL_checknumber(L, 1));
+		return 0;
+	}
+
 
 #pragma region Class Implementation
+
 	VTracer::VTracer(const __int16 width, const __int16 height) :
 		window(new SDLWindow::Window(width, height)),
 		buffer(window->get_buffer())
@@ -117,7 +142,7 @@ namespace vtracer
 		// calculate pixel size
 		this->pixel_size = window->get_width() > window->get_height() ?
 			window->get_width() : window->get_height();
-		this->pixel_size /= (pixel_size / 10);
+		this->pixel_size /= (pixel_size / 1);
 
 		// TODO maybe the most stupid thing, should work for now tho
 		::vtracer::vtracer_instance = this;
@@ -138,14 +163,7 @@ namespace vtracer
 		this->window->register_event_processer(&event_processer);
 
 		// initialize background
-		memset(window->get_buffer(), 150, window->get_width() * window->get_height() * sizeof(Uint32));
-		this->window->render();
-
-		// testing purposes
-		this->window->draw_pixel(SDLWindow::COLOR::GREEN, 40, 44, this->pixel_size);
-		this->window->draw_pixel(SDLWindow::COLOR::GREEN, 400, 44, this->pixel_size);
-		this->window->draw_pixel(SDLWindow::COLOR::GREEN, 200, 80, this->pixel_size);
-		this->window->draw_pixel(SDLWindow::COLOR::GREEN, 790, 300, this->pixel_size);
+		memset(this->window->get_buffer(), 150, this->window->get_width() * this->window->get_height() * sizeof(Uint32));
 		this->window->render();
 
 		// load lua scripts
@@ -173,6 +191,9 @@ namespace vtracer
 		lua_pushcfunction(L, LUA_set_pixel);
 		lua_setfield(L, -2, "draw_pixel");
 
+		lua_pushcfunction(L, LUA_set_pixel_size);
+		lua_setfield(L, -2, "set_pixel_size");
+
 		lua_pop(L, 1);
 
 		stack_dump();
@@ -180,13 +201,21 @@ namespace vtracer
 		return ok;
 	}
 
+	// setters
+	void VTracer::set_pixel_size(const Uint16 p_size) const
+	{
+		this->pixel_size = p_size;
+	}
+
+
 	bool VTracer::process()
 	{
 		return this->window->process();
 	}
 
-	void VTracer::draw_pixel(Uint16 x, Uint16 y) const
+	void VTracer::draw_pixel(Uint16& x, Uint16& y) const
 	{
+		this->find_pixel(x, y);
 		this->window->draw_pixel(SDLWindow::COLOR::BLUE, x, y, this->pixel_size);
 	}
 
@@ -200,8 +229,19 @@ namespace vtracer
 		this->window->mouse_position(x, y);
 	}
 
+	void VTracer::find_pixel(Uint16& x, Uint16& y) const
+	{
+		x = (x / this->pixel_size) * pixel_size;
+		y = (y / this->pixel_size) * pixel_size;
+	}
+
+	void VTracer::clear_screen() const
+	{
+		memset(this->window->get_buffer(), 150, window->get_width() * window->get_height() * sizeof(Uint32));
+	}
 
 #pragma endregion
+
 
 	static void stack_dump()
 	{

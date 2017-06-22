@@ -10,13 +10,19 @@ namespace vtracer
 		~VTracer();
 		bool init() const;
 		bool process();
-		void draw_pixel(Uint16, Uint16) const;
+		void draw_pixel(Uint16&, Uint16&) const;
 		void render() const;
 		void mouse_position(int&, int&) const;
+		void clear_screen() const;
+
+		// setters
+		void set_pixel_size(const Uint16) const;
 	private:
 		SDLWindow::Window* window = nullptr;
 		Uint32* buffer = nullptr;
-		Uint16 pixel_size;
-		
+		mutable Uint16 pixel_size;
+
+	private:
+		void find_pixel(Uint16&, Uint16&) const;
 	};
 }
